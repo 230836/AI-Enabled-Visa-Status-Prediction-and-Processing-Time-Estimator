@@ -1,19 +1,29 @@
 # ==========================================================
-# 🚀 MILESTONE 3: PREDICTIVE MODELING
-# Visa Processing Time Prediction
+# MILESTONE 3 - MACHINE LEARNING MODELING PIPELINE
+# Visa Processing Time Estimation
 # ==========================================================
 
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
 
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 
-print("Milestone 3 Started 🚀")
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+from xgboost import XGBRegressor
+
+sns.set(style="whitegrid")
+
+print("Milestone 3 Pipeline Started")
+
 
 # ==========================================================
 # 1️⃣ LOAD DATASET
@@ -23,9 +33,9 @@ df = pd.read_csv("Final_Dataset.csv")
 
 print("Dataset Shape:", df.shape)
 
-# Convert date columns
 df["Application_Date"] = pd.to_datetime(df["Application_Date"])
 df["Decision_Date"] = pd.to_datetime(df["Decision_Date"])
+
 
 # ==========================================================
 # 2️⃣ FEATURE ENGINEERING
@@ -34,15 +44,20 @@ df["Decision_Date"] = pd.to_datetime(df["Decision_Date"])
 df["Application_Year"] = df["Application_Date"].dt.year
 df["Application_Month"] = df["Application_Date"].dt.month
 df["Application_Quarter"] = df["Application_Date"].dt.quarter
+df["Application_Weekday"] = df["Application_Date"].dt.dayofweek
+
+print("Feature Engineering Completed")
+
 
 # ==========================================================
-# 3️⃣ SELECT FEATURES
+# 3️⃣ FEATURE SELECTION
 # ==========================================================
 
 features = [
     "Application_Year",
     "Application_Month",
     "Application_Quarter",
+    "Application_Weekday",
     "Processing_Office",
     "Visa_Status"
 ]
@@ -52,84 +67,174 @@ target = "Processing_Days"
 X = df[features]
 y = df[target]
 
+
 # ==========================================================
-# 4️⃣ ENCODE CATEGORICAL FEATURES
+# 4️⃣ PREPROCESSING PIPELINE
 # ==========================================================
 
-label_encoders = {}
+categorical_cols = ["Processing_Office", "Visa_Status"]
 
-for col in X.select_dtypes(include="object").columns:
-    le = LabelEncoder()
-    X[col] = le.fit_transform(X[col])
-    label_encoders[col] = le
+preprocessor = ColumnTransformer(
+    transformers=[
+        ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_cols)
+    ],
+    remainder="passthrough"
+)
+
 
 # ==========================================================
 # 5️⃣ TRAIN TEST SPLIT
 # ==========================================================
 
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y,
+    X,
+    y,
     test_size=0.2,
     random_state=42
 )
 
-print("Training samples:", X_train.shape[0])
-print("Testing samples:", X_test.shape[0])
+print("Training Samples:", X_train.shape)
+print("Testing Samples:", X_test.shape)
+
 
 # ==========================================================
-# 6️⃣ MODEL 1: LINEAR REGRESSION
+# 6️⃣ MODEL DEFINITIONS
 # ==========================================================
 
-lr_model = LinearRegression()
-lr_model.fit(X_train, y_train)
+models = {
 
-lr_pred = lr_model.predict(X_test)
+    "Linear Regression": LinearRegression(),
+
+    "Random Forest": RandomForestRegressor(
+        n_estimators=250,
+        max_depth=15,
+        random_state=42
+    ),
+
+    "Gradient Boosting": GradientBoostingRegressor(
+        n_estimators=200,
+        learning_rate=0.05,
+        random_state=42
+    ),
+
+    "XGBoost": XGBRegressor(
+        n_estimators=300,
+        learning_rate=0.05,
+        max_depth=6,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        random_state=42
+    )
+}
+
+
+results = []
+
 
 # ==========================================================
-# 7️⃣ MODEL 2: RANDOM FOREST
+# 7️⃣ MODEL TRAINING + EVALUATION
 # ==========================================================
 
-rf_model = RandomForestRegressor(
-    n_estimators=100,
-    random_state=42
+for name, model in models.items():
+
+    pipeline = Pipeline(
+        steps=[
+            ("preprocessing", preprocessor),
+            ("model", model)
+        ]
+    )
+
+    pipeline.fit(X_train, y_train)
+
+    predictions = pipeline.predict(X_test)
+
+    mae = mean_absolute_error(y_test, predictions)
+    rmse = np.sqrt(mean_squared_error(y_test, predictions))
+    r2 = r2_score(y_test, predictions)
+
+    cv_score = cross_val_score(
+        pipeline,
+        X_train,
+        y_train,
+        cv=5,
+        scoring="neg_mean_absolute_error"
+    ).mean()
+
+    results.append({
+        "Model": name,
+        "MAE": mae,
+        "RMSE": rmse,
+        "R2": r2,
+        "CV_MAE": abs(cv_score)
+    })
+
+    print("\nModel:", name)
+    print("MAE :", round(mae,2))
+    print("RMSE:", round(rmse,2))
+    print("R2  :", round(r2,3))
+
+
+# ==========================================================
+# 8️⃣ MODEL COMPARISON
+# ==========================================================
+
+results_df = pd.DataFrame(results)
+
+print("\nModel Comparison Table")
+print(results_df.sort_values("MAE"))
+
+
+# ==========================================================
+# 9️⃣ VISUALIZE MODEL PERFORMANCE
+# ==========================================================
+
+plt.figure(figsize=(8,5))
+
+sns.barplot(
+    data=results_df,
+    x="Model",
+    y="MAE"
 )
 
-rf_model.fit(X_train, y_train)
+plt.title("Model Comparison (Lower MAE is Better)")
+plt.xticks(rotation=30)
 
-rf_pred = rf_model.predict(X_test)
+plt.show()
 
-# ==========================================================
-# 8️⃣ MODEL 3: GRADIENT BOOSTING
-# ==========================================================
-
-gb_model = GradientBoostingRegressor()
-
-gb_model.fit(X_train, y_train)
-
-gb_pred = gb_model.predict(X_test)
 
 # ==========================================================
-# 9️⃣ MODEL EVALUATION FUNCTION
+# 🔟 FEATURE IMPORTANCE (RANDOM FOREST)
 # ==========================================================
 
-def evaluate_model(name, y_true, y_pred):
+rf_pipeline = Pipeline(
+    steps=[
+        ("preprocessing", preprocessor),
+        ("model", RandomForestRegressor(n_estimators=250))
+    ]
+)
 
-    mae = mean_absolute_error(y_true, y_pred)
-    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-    r2 = r2_score(y_true, y_pred)
+rf_pipeline.fit(X_train, y_train)
 
-    print(f"\n{name} Results")
-    print("---------------------")
-    print("MAE :", mae)
-    print("RMSE:", rmse)
-    print("R2  :", r2)
+model = rf_pipeline.named_steps["model"]
 
-# ==========================================================
-# 🔟 EVALUATE ALL MODELS
-# ==========================================================
+feature_names = rf_pipeline.named_steps["preprocessing"] \
+                .get_feature_names_out()
 
-evaluate_model("Linear Regression", y_test, lr_pred)
-evaluate_model("Random Forest", y_test, rf_pred)
-evaluate_model("Gradient Boosting", y_test, gb_pred)
+importance = pd.Series(
+    model.feature_importances_,
+    index=feature_names
+).sort_values(ascending=False)[:15]
 
-print("\nMilestone 3 Completed ✅")
+plt.figure(figsize=(9,6))
+
+sns.barplot(
+    x=importance.values,
+    y=importance.index
+)
+
+plt.title("Top Important Features (Random Forest)")
+
+plt.show()
+
+
+print("\nMilestone 3 Completed Successfully 🚀")
