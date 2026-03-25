@@ -236,5 +236,3 @@ plt.title("Top Important Features (Random Forest)")
 
 plt.show()
 
-
-print("\nMilestone 3 Completed Successfully 🚀")
