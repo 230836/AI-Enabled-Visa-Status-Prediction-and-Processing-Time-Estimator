@@ -6,31 +6,34 @@ Streamlit Web Application
 import streamlit as st
 import joblib
 import pandas as pd
-from datetime import datetime
 
+# -------------------------------
+# Load Model
+# -------------------------------
+model = joblib.load("models/best_model.pkl")
 
-model = joblib.load("models/model.pkl")
-
-
-
+# -------------------------------
+# Preprocessing Function
+# -------------------------------
 def preprocess_input(data):
     df = pd.DataFrame([data])
 
     # Convert date → month
     df['application_date'] = pd.to_datetime(df['application_date'])
-    df['month'] = df['application_date'].dt.month
+    df['Application_Month'] = df['application_date'].dt.month
+    df['Application_Year'] = df['application_date'].dt.year
 
-    # Drop original column
+    # Drop original date
     df.drop(columns=['application_date'], inplace=True)
 
-    # Encoding (keep same as training)
-    df['country'] = df['country'].map({
+    # Encoding (same as training)
+    df['Applicant_Country'] = df['Applicant_Country'].map({
         "India": 0,
         "USA": 1,
         "UK": 2
     })
 
-    df['visa_type'] = df['visa_type'].map({
+    df['Visa_Type'] = df['Visa_Type'].map({
         "Student": 0,
         "Work": 1,
         "Tourist": 2
@@ -38,60 +41,59 @@ def preprocess_input(data):
 
     return df
 
-
+# -------------------------------
+# Prediction Function
+# -------------------------------
 def predict_time(data):
     processed = preprocess_input(data)
     prediction = model.predict(processed)[0]
     return round(prediction, 2)
 
-
-def confidence_range(pred, error=2):
-    lower = max(0, pred - error)
-    upper = pred + error
-    return round(lower, 2), round(upper, 2)
+# -------------------------------
+# Confidence Range
+# -------------------------------
+def confidence_range(pred):
+    error = 5  # You can adjust
+    return max(0, pred - error), pred + error
 
 # -------------------------------
-# UI Design
+# Streamlit UI
 # -------------------------------
-
-st.set_page_config(page_title="Visa Predictor", page_icon="🌍", layout="centered")
+st.set_page_config(page_title="Visa Predictor", page_icon="🌍")
 
 st.markdown(
     "<h1 style='text-align:center; color:#4CAF50;'>🌍 Visa Processing Time Predictor</h1>",
     unsafe_allow_html=True
 )
 
-st.markdown("---")
-
 st.write("### Enter Application Details")
 
-# Input Fields
-country = st.selectbox("🌎 Country", ["India", "USA", "UK"])
+# Inputs
+country = st.selectbox("🌎 Applicant Country", ["India", "USA", "UK"])
 visa_type = st.selectbox("📄 Visa Type", ["Student", "Work", "Tourist"])
 application_date = st.date_input("📅 Application Date")
 
-# Predict Button
+# Button
 if st.button("🚀 Predict Processing Time"):
 
-    with st.spinner("Processing..."):
+    input_data = {
+        "Applicant_Country": country,
+        "Visa_Type": visa_type,
+        "application_date": str(application_date)
+    }
 
-        input_data = {
-            "country": country,
-            "visa_type": visa_type,
-            "application_date": str(application_date)
-        }
+    try:
+        prediction = predict_time(input_data)
+        low, high = confidence_range(prediction)
 
-        try:
-            prediction = predict_time(input_data)
-            lower, upper = confidence_range(prediction)
+        st.success(f"⏱ Estimated Processing Time: **{prediction} days**")
+        st.info(f"📊 Expected Range: **{round(low,2)} – {round(high,2)} days**")
 
-            st.success(f"⏱ Estimated Time: **{prediction} days**")
+    except Exception as e:
+        st.error(f"Error: {e}")
 
-            st.info(f"📊 Expected Range: **{lower} – {upper} days**")
-
-        except Exception as e:
-            st.error(f"❌ Error: {e}")
-
+# -------------------------------
 # Footer
+# -------------------------------
 st.markdown("---")
-st.caption("AI-based prediction system for visa processing time")
+st.caption("Built using Machine Learning & Streamlit")
